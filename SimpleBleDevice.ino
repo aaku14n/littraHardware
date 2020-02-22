@@ -22,11 +22,18 @@
 #include <IRutils.h>
 #include <Arduino.h>
 #include <string.h>
+#include <EEPROM.h>
+
 
 const uint8_t PIN_IR_TX = 32;
 const String ON = "on";
 const String OFF = "off";
 const String IR_STRING = "ir";
+const String RENAME_COMMAND = "rename";
+const int memoryAddress = 0;
+const String DEFAULT_NAME = "LITTRA SMART";
+const int EEPROM_SIZE = 128;
+
 
 IRsend irTX(PIN_IR_TX);
 
@@ -46,9 +53,19 @@ void setup() {
     Serial.begin(115200);
     Serial.setDebugOutput(true);
     pinMode(0, INPUT_PULLUP);
-    Serial.print("ESP32 SDK: ");
+
+    // initialize EEPROM with predefined size
+
+    EEPROM.begin(EEPROM_SIZE);
+
+    
     Serial.println(ESP.getSdkVersion());
-    SerialBT.begin("ESP32 light");
+    String deviceName = read_String(memoryAddress);
+    if(!deviceName || !deviceName[0] ){
+      deviceName = DEFAULT_NAME;
+      }
+    Serial.println(deviceName);
+    SerialBT.begin(deviceName);
     SerialBT.setTimeout(100);
     
     Serial.println("Press the button to change the device's name");
@@ -68,11 +85,47 @@ void handleIRCode(String code){
     unsigned long iri = strtoul(irc,0,16);
     Serial.println(iri);
     Serial.println(iri,HEX);
-//    Serial.println(iri->bits);
     irTX.sendJVC(iri, 16, true); 
 
   }
 
+
+void writeString(int add,String data)
+  {
+    int _size = data.length();
+    int i;
+    for(i=0;i<_size;i++)
+    {
+      EEPROM.write(add+i,data[i]);
+    }
+    EEPROM.write(add+_size,'\0');   //Add termination null character for String Data
+    EEPROM.commit();
+  }
+ 
+ 
+String read_String(int add)
+  {
+    int i;
+    char data[50]; //Max 100 Bytes
+    int len=0;
+    unsigned char k;
+    k=EEPROM.read(add);
+    while(k != '\0' && len< 50)   //Read until null character
+    {    
+      k=EEPROM.read(add+len);
+      data[len]=k;
+      len++;
+    }
+    data[len]='\0';
+    return String(data);
+  }
+void handleRename(String code){
+  Serial.println(code);
+   String newName  = code.substring(7,code.length());
+   Serial.println(newName);
+   writeString(memoryAddress,newName);
+   ESP.restart();
+  }
 void loop() {
 
     String code = SerialBT.readString();
@@ -84,7 +137,9 @@ void loop() {
       digitalWrite(LED_BUILTIN, LOW);   
     }else if (code.indexOf(IR_STRING) >= 0){
       handleIRCode(code);
-     }
+     }else if(code.indexOf(RENAME_COMMAND) >= 0){
+      handleRename(code);
+      }
     
     yield();
 }
